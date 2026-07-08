@@ -3,7 +3,7 @@ const OTP = require('../models/OTP.model');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const bcryptjs = require('bcryptjs');
-const sendEmail = require('../utils/sendEmail'); // استدعاء الـ Utility الجديد
+const sendEmail = require('../utils/sendEmail');
 
 // 1. إرسال كود الـ OTP للتسجيل
 exports.sendRegisterOtp = async (req, res, next) => {
@@ -29,7 +29,7 @@ exports.sendRegisterOtp = async (req, res, next) => {
     }
 };
 
-// 2. التحقق من الـ OTP وإنشاء الحساب (التشفير يتم تلقائياً في الموديل)
+// 2. التحقق من الـ OTP وإنشاء الحساب
 exports.verifyOtp = async (req, res, next) => {
     try {
         const { email, otp } = req.body;
@@ -86,14 +86,14 @@ exports.sendForgotPasswordOtp = async (req, res, next) => {
     }
 };
 
-// 5. تغيير كلمة المرور (التشفير يتم تلقائياً في الموديل عند عمل .save())
+// 5. تغيير كلمة المرور عبر الـ Token
 exports.resetPassword = async (req, res, next) => {
     try {
         const { token, newPassword } = req.body;
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const user = await User.findById(decoded.userId);
         
-        user.password = newPassword; // الـ pre-save في الموديل هيشفر الباسورد لوحده!
+        user.password = newPassword;
         await user.save();
 
         res.status(200).json({ success: true, message: 'Password reset successfully.' });
@@ -118,44 +118,5 @@ exports.getMe = async (req, res, next) => {
         return res.status(200).json({ success: true, data: req.user });
     } catch (error) {
         return res.status(500).json({ success: false, error: error.message });
-    }
-};
-
-
-exports.getAllUsers = async (req, res, next) => {
-    try {
-        // 1. استخراج الـ Query من الرابط (مثلاً: ?role=admin&search=ahmed&page=1)
-        const { role, search, isVerified, page = 1 } = req.query;
-
-        // 2. بناء الـ Filter Object
-        let filter = {};
-        if (role) filter.role = role;
-        
-        // لو مبعوت قيمة للـ verified نحولها لـ boolean
-        if (isVerified !== undefined) filter.isVerified = isVerified === 'true';
-        
-        // البحث بالاسم (استخدام Regex عشان يبحث عن جزء من الاسم)
-        if (search) {
-            filter.username = { $regex: search, $options: 'i' }; // 'i' تعني case-insensitive
-        }
-
-        // 3. منطق الـ Pagination (تقسيم الصفحات)
-        const limit = 5; // عدد العناصر في كل صفحة
-        const skip = (parseInt(page) - 1) * limit;
-
-        // 4. تنفيذ الاستعلام من الداتابيز
-        const users = await User.find(filter).skip(skip).limit(limit);
-        const totalFilteredUsers = await User.countDocuments(filter); // عدد اليوزرات اللي طبقت عليهم الفلتر
-
-        // 5. الرد بالنتيجة
-        res.status(200).json({
-            success: true,
-            totalFilteredUsers,
-            page: parseInt(page),
-            pages: Math.ceil(totalFilteredUsers / limit),
-            data: users
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
     }
 };

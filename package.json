@@ -13,12 +13,15 @@
   "dependencies": {
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^1.41.3",
     "crypto": "^1.0.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "joi": "^18.2.3",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.7.3",
+    "multer": "^2.2.0",
+    "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^9.0.3",
     "validator": "^13.15.35"
   }

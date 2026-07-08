@@ -3,17 +3,21 @@ const express = require('express');
 const connectDB = require('./DB/connection');
 const authRoutes = require('./routes/auth.routes');
 
-// 1. إنشاء تطبيق Express أولاً
 const app = express();
 
-// 2. الاتصال بقاعدة البيانات
+
 connectDB();
 
-// 3. الميدل وير الخاص بقراءة الـ JSON (يجب أن يكون قبل المسارات!)
+
 app.use(express.json()); 
 
 // 4. ربط مسارات الـ Authentication
 app.use('/api/auth', authRoutes); 
+
+// --- ضيف السطرين دول هنا ---
+const userRoutes = require('./routes/user.routes'); // استدعاء ملف الروتر بتاع اليوزر
+app.use('/api/users', userRoutes); // ربط المسار
+
 
 // 5. المسار الرئيسي للسيرفر
 app.get('/', (req, res) => {

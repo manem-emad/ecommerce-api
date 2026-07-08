@@ -1,26 +1,26 @@
 const express = require('express');
 const router = express.Router();
 
-// 1. استدعاء كل شيء 
+// استدعاء الدوال الأساسية فقط الموجودة في الكنترولر
 const { 
     updateUserProfile, 
-    uploadUserAvatar 
-} = require('../controllers/user.controller'); // ده الـ Controller بتاع اليوزر
-const { protect } = require('../middleware/auth'); // الـ Auth Middleware
-const { adminMiddleware } = require('../middleware/admin'); // الـ Admin Middleware
-const { upload } = require('../middleware/cloudinary'); // الـ Cloudinary middleware
+    changePassword,
+    getAllUsers 
+} = require('../controllers/user.controller'); 
 
-// 2. الروت الخاص باليوزر (تعديل البيانات)
-// الـ protect هنا عشان يتأكد إنه يوزر مسجل
+const { protect } = require('../middleware/auth'); 
+const { adminMiddleware } = require('../middleware/admin'); 
+
+// 1. الروت الخاص باليوزر (تعديل البيانات)
 router.put('/update-profile', protect, updateUserProfile);
 
-// 3. روت رفع الصورة (Cloudinary)
-// هنا بنستخدم الـ upload middleware قبل الـ controller
-router.post('/upload-avatar', protect, upload.single('image'), uploadUserAvatar);
+// 2. روت تغيير الباسورد
+router.put('/change-password', protect, changePassword);
 
-router.get('/', protect, adminMiddleware, authController.getAllUsers);
-// 4. روت خاص بالأدمن فقط
-// هنا بنحط الـ protect (عشان يتأكد إنه مسجل) وبعدين الـ adminMiddleware (عشان يتأكد إنه أدمن)
+// 3. روت الأدمن (جلب كل المستخدمين)
+router.get('/', protect, adminMiddleware, getAllUsers);
+
+// 4. روت خاص بالأدمن (داشبورد)
 router.get('/admin/dashboard', protect, adminMiddleware, (req, res) => {
     res.json({ message: "Welcome to Admin Dashboard" });
 });
