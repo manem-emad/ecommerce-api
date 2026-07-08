@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs'); // وحدنا المكتبة لـ bcryptjs عشان متعملش كراش
+const bcrypt = require('bcryptjs');
 
 const addressSchema = new mongoose.Schema({
     street: { type: String, required: true },
@@ -56,7 +56,17 @@ const userSchema = new mongoose.Schema({
     timestamps: true 
 });
 
-// دالة المقارنة سبتهالك لو احتجتها في تسجيل الدخول
+userSchema.pre('save', async function(next) {
+    
+    if (!this.isModified('password')) {
+        return next();
+    }
+   
+    this.password = await bcrypt.hash(this.password, 12);
+    next();
+});
+
+
 userSchema.methods.comparePassword = async function (enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };

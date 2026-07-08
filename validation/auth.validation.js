@@ -25,11 +25,10 @@ const forgotPassword = Joi.object({
     email: Joi.string().email().required()
 });
 
-// 5. فالياديشن تغيير كلمة المرور بالـ OTP الجديد
+// 5. فالياديشن تغيير كلمة المرور بالـ Token الجديد
 const resetPassword = Joi.object({
-    email: Joi.string().email().required(),
-    otp: Joi.string().required(),
-    newPassword: Joi.string().min(6).required() // 👈 غيرنا password إلى newPassword
+    token: Joi.string().required(), // استبدلنا email و otp بـ token
+    newPassword: Joi.string().min(6).required()
 });
 
 // التصدير كـ Object يحتوي على كل الـ schemas المحدثة

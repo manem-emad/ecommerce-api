@@ -1,218 +1,104 @@
 const User = require('../models/User.model');
 const OTP = require('../models/OTP.model');
-const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const bcryptjs = require('bcryptjs'); // تأكد من تثبيتها npm i bcryptjs لو تستخدمها لتشفير الباسورد
-
-// إعداد مرسل البريد الإلكتروني (Nodemailer)
-const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: process.env.EMAIL_PORT || 587,
-    secure: false, 
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
-});
+const bcryptjs = require('bcryptjs');
+const sendEmail = require('../utils/sendEmail'); // استدعاء الـ Utility الجديد
 
 // 1. إرسال كود الـ OTP للتسجيل
 exports.sendRegisterOtp = async (req, res, next) => {
     try {
         const { username, email, password, phone } = req.body;
-
         const existingUser = await User.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({ success: false, message: 'An account with this email already exists.' });
-        }
+        if (existingUser) return res.status(400).json({ success: false, message: 'User already exists.' });
 
         await OTP.deleteMany({ email, purpose: 'register' });
-
         const otp = crypto.randomInt(100000, 999999).toString();
 
-        await OTP.create({
+        await OTP.create({ email, otp, purpose: 'register', userData: { username, email, password, phone } });
+
+        await sendEmail({
             email,
-            otp,
-            purpose: 'register',
-            userData: { username, email, password, phone }
+            subject: 'Verify your account',
+            html: `<p>Your OTP is: <b>${otp}</b></p>`
         });
 
-        const mailOptions = {
-            from: `"SEF Academy Store" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: 'Verify your account - SEF Academy Store',
-            html: `<p>Your One-Time Password (OTP) to register is: <b>${otp}</b>. It expires in 10 minutes.</p>`
-        };
-
-        await transporter.sendMail(mailOptions);
-
-        return res.status(200).json({
-            success: true,
-            message: `An OTP has been sent to ${email}. It expires in 10 minutes.`
-        });
-
+        res.status(200).json({ success: true, message: 'OTP sent.' });
     } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
-// 2. التحقق من الـ OTP وإنشاء الحساب رسمياً
+// 2. التحقق من الـ OTP وإنشاء الحساب (التشفير يتم تلقائياً في الموديل)
 exports.verifyOtp = async (req, res, next) => {
     try {
         const { email, otp } = req.body;
-
         const otpRecord = await OTP.findOne({ email, otp, purpose: 'register' });
-        if (!otpRecord) {
-            return res.status(400).json({ success: false, message: 'Invalid OTP or code expired.' });
-        }
+        if (!otpRecord) return res.status(400).json({ success: false, message: 'Invalid OTP.' });
 
         const { username, password, phone } = otpRecord.userData;
-
-        // عمل Hash للباسورد قبل الحفظ لحماية الحسابات
-        const hashedPassword = await bcryptjs.hash(password, 12);
-
-        const newUser = await User.create({
-            username,
-            email,
-            password: hashedPassword, 
-            phone,
-            isVerified: true
-        });
+        const newUser = await User.create({ username, email, password, phone, isVerified: true });
 
         await OTP.deleteOne({ _id: otpRecord._id });
-
-        return res.status(201).json({
-            success: true,
-            message: 'Account verified and created successfully.',
-            user: { id: newUser._id, username: newUser.username, email: newUser.email }
-        });
-
+        res.status(201).json({ success: true, message: 'Account created.', user: { id: newUser._id } });
     } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
-// 3. تسجيل الدخول وإصدار الـ Tokens والـ Cookies الآمنة
+// 3. تسجيل الدخول
 exports.login = async (req, res, next) => {
     try {
         const { email, password } = req.body;
-
         const getUser = await User.findOne({ email }).select("+password");
-        if (!getUser) {
-            return res.status(400).json({ message: "Invalid email or password" });
+        if (!getUser || !(await getUser.comparePassword(password))) {
+            return res.status(400).json({ message: "Invalid credentials" });
         }
 
-        const isMatch = await bcryptjs.compare(password, getUser.password);
-        if (!isMatch) {
-            return res.status(400).json({ message: "Invalid email or password" });
-        }
+        const accessToken = jwt.sign({ userId: getUser._id }, process.env.JWT_SECRET, { expiresIn: "15m" });
+        const refreshToken = jwt.sign({ userId: getUser._id }, process.env.REFRESH_SECRET, { expiresIn: "7d" });
 
-        // إنشاء الـ Access Token (مدته قصيرة 15 دقيقة)
-        const accessToken = jwt.sign(
-            { userId: getUser._id, role: getUser.role || 'user' },
-            process.env.JWT_SECRET || process.env.Secret_Key || 'secret',
-            { expiresIn: "15m" }
-        );
-
-        // إنشاء الـ Refresh Token (مدته طويلة 7 أيام)
-        const refreshToken = jwt.sign(
-            { userId: getUser._id },
-            process.env.REFRESH_SECRET || 'refresh_secret',
-            { expiresIn: "7d" }
-        );
-
-        // حفظ الـ Refresh Token في كوكيز آمنة (HttpOnly)
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000
-        });
-
-        return res.status(200).json({
-            success: true,
-            message: "User logged in successfully",
-            accessToken
-        });
-
+        res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: true, sameSite: 'strict' });
+        res.status(200).json({ success: true, accessToken });
     } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
-// 4. إرسال كود استعادة كلمة المرور (تم التحديث للعمل الفعلي)
+// 4. إرسال رابط استعادة كلمة المرور
 exports.sendForgotPasswordOtp = async (req, res, next) => {
     try {
         const { email } = req.body;
-
         const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'No user found with this email address.' });
-        }
+        if (!user) return res.status(404).json({ message: 'User not found.' });
 
-        // مسح أي أكواد استعادة قديمة لنفس الإيميل لعدم حدوث تداخل
-        await OTP.deleteMany({ email, purpose: 'forgot_password' });
+        const resetToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
-        // توليد كود عشوائي من 6 أرقام
-        const otp = crypto.randomInt(100000, 999999).toString();
-
-        // حفظ كود الاستعادة مؤقتاً في الداتابيز
-        await OTP.create({
+        await sendEmail({
             email,
-            otp,
-            purpose: 'forgot_password'
+            subject: 'Reset Password',
+            html: `<p>Your token: <strong>${resetToken}</strong></p>`
         });
 
-        const mailOptions = {
-            from: `"SEF Academy Store" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: 'Reset your password - SEF Academy Store',
-            html: `<p>Your One-Time Password (OTP) to reset your password is: <b>${otp}</b>. It expires in 10 minutes.</p>`
-        };
-
-        await transporter.sendMail(mailOptions);
-
-        return res.status(200).json({
-            success: true,
-            message: `A password reset OTP has been sent to ${email}.`
-        });
-
+        res.status(200).json({ success: true, message: 'Reset token sent.' });
     } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
-// 5. التحقق وتغيير كلمة المرور (تم التحديث للعمل الفعلي)
-exports.verifyForgotPasswordOtp = async (req, res, next) => {
+// 5. تغيير كلمة المرور (التشفير يتم تلقائياً في الموديل عند عمل .save())
+exports.resetPassword = async (req, res, next) => {
     try {
-        const { email, otp, newPassword } = req.body;
-
-        // التأكد من صحة الكود والهدف منه
-        const otpRecord = await OTP.findOne({ email, otp, purpose: 'forgot_password' });
-        if (!otpRecord) {
-            return res.status(400).json({ success: false, message: 'Invalid OTP or code expired.' });
-        }
-
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'User no longer exists.' });
-        }
-
-        // تشفير كلمة المرور الجديدة باستخدام bcryptjs المتوافقة مع بقية الملف
-        const hashedPassword = await bcryptjs.hash(newPassword, 12);
-        user.password = hashedPassword;
+        const { token, newPassword } = req.body;
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId);
+        
+        user.password = newPassword; // الـ pre-save في الموديل هيشفر الباسورد لوحده!
         await user.save();
 
-        // حذف كود الـ OTP بعد استخدامه وتحديث الباسورد بنجاح
-        await OTP.deleteOne({ _id: otpRecord._id });
-
-        return res.status(200).json({
-            success: true,
-            message: 'Password has been reset successfully. You can now log in with your new password.'
-        });
-
+        res.status(200).json({ success: true, message: 'Password reset successfully.' });
     } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
+        res.status(400).json({ success: false, message: 'Invalid or expired token.' });
     }
 };
 
@@ -232,5 +118,44 @@ exports.getMe = async (req, res, next) => {
         return res.status(200).json({ success: true, data: req.user });
     } catch (error) {
         return res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+
+exports.getAllUsers = async (req, res, next) => {
+    try {
+        // 1. استخراج الـ Query من الرابط (مثلاً: ?role=admin&search=ahmed&page=1)
+        const { role, search, isVerified, page = 1 } = req.query;
+
+        // 2. بناء الـ Filter Object
+        let filter = {};
+        if (role) filter.role = role;
+        
+        // لو مبعوت قيمة للـ verified نحولها لـ boolean
+        if (isVerified !== undefined) filter.isVerified = isVerified === 'true';
+        
+        // البحث بالاسم (استخدام Regex عشان يبحث عن جزء من الاسم)
+        if (search) {
+            filter.username = { $regex: search, $options: 'i' }; // 'i' تعني case-insensitive
+        }
+
+        // 3. منطق الـ Pagination (تقسيم الصفحات)
+        const limit = 5; // عدد العناصر في كل صفحة
+        const skip = (parseInt(page) - 1) * limit;
+
+        // 4. تنفيذ الاستعلام من الداتابيز
+        const users = await User.find(filter).skip(skip).limit(limit);
+        const totalFilteredUsers = await User.countDocuments(filter); // عدد اليوزرات اللي طبقت عليهم الفلتر
+
+        // 5. الرد بالنتيجة
+        res.status(200).json({
+            success: true,
+            totalFilteredUsers,
+            page: parseInt(page),
+            pages: Math.ceil(totalFilteredUsers / limit),
+            data: users
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 };
