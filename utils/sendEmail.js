@@ -12,14 +12,11 @@ const sendEmail = async ({ email, subject, message }) => {
     });
 
     const mailOptions = {
-        from: `"Ecommerce API" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: subject,
-        html: `<div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee;">
-                <h2>${subject}</h2>
-                <p>${message}</p>
-               </div>`
-    };
+    from: `"Ecommerce API" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: subject,
+    html: message || "<h1>No message content</h1>" 
+     };
 
     try {
         await transporter.sendMail(mailOptions);

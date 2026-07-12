@@ -17,11 +17,11 @@ exports.sendRegisterOtp = async (req, res, next) => {
 
         await OTP.create({ email, otp, purpose: 'register', userData: { username, email, password, phone } });
 
-        await sendEmail({
-            email,
-            subject: 'Verify your account',
-            html: `<p>Your OTP is: <b>${otp}</b></p>`
-        });
+       await sendEmail({
+     email,
+     subject: 'Verify your account',
+     message: `<p>Your OTP is: <b>${otp}</b></p>` 
+     });
 
         res.status(200).json({ success: true, message: 'OTP sent.' });
     } catch (error) {
@@ -75,10 +75,10 @@ exports.sendForgotPasswordOtp = async (req, res, next) => {
         const resetToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
         await sendEmail({
-            email,
-            subject: 'Reset Password',
-            html: `<p>Your token: <strong>${resetToken}</strong></p>`
-        });
+     email,
+      subject: 'Reset Password',
+      message: `<p>Your token: <strong>${resetToken}</strong></p>`
+      });
 
         res.status(200).json({ success: true, message: 'Reset token sent.' });
     } catch (error) {

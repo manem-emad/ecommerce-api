@@ -2,7 +2,6 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
 
-
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -19,4 +18,10 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({ storage: storage });
 
-module.exports = { upload };
+// أضف الدالة دي هنا عشان الـ controller يستخدمها
+const deleteImage = async (public_id) => {
+    return await cloudinary.uploader.destroy(public_id);
+};
+
+// عدل الـ export عشان يشمل الدالة الجديدة
+module.exports = { upload, deleteImage };
