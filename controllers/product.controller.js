@@ -32,7 +32,9 @@ exports.createProduct = async (req, res, next) => {
 exports.getAllProducts = async (req, res, next) => {
     try {
         const { category, search, page = 1, limit = 5, sort = '-createdAt' } = req.query;
-        let filter = {};
+        // هنا بنضيف isActive: true عشان الزوار ميشوفوش المنتجات المعطلة
+        let filter = { isActive: true }; 
+        
         if (category) filter.category = category;
         if (search) filter.title = { $regex: search, $options: 'i' };
 
@@ -60,20 +62,22 @@ exports.updateProduct = async (req, res, next) => {
         let product = await Product.findById(req.params.id);
         if (!product) return next(new AppError(MESSAGES.PRODUCT_NOT_FOUND, 404));
         
-        // هنا بتزود لوجيك رفع صور جديدة وحذف القديمة لو احتجت
         const updatedProduct = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
         res.status(200).json({ success: true, data: updatedProduct });
     } catch (error) { next(error); }
 };
 
-// 5. حذف منتج (Admin)
+// 5. حذف منتج (Admin) - تعديل: تحويل الحذف النهائي لـ Soft Delete
 exports.deleteProduct = async (req, res, next) => {
     try {
         const product = await Product.findById(req.params.id);
         if (!product) return next(new AppError(MESSAGES.PRODUCT_NOT_FOUND, 404));
-        for (const img of product.images) await deleteImage(img.public_id);
-        await Product.findByIdAndDelete(req.params.id);
-        res.status(200).json({ success: true, message: "Product and images deleted" });
+        
+        // بدل ما نمسح المنتج من الداتابيس، هنعطله بس
+        product.isActive = false;
+        await product.save();
+        
+        res.status(200).json({ success: true, message: "Product deactivated (Soft Deleted)" });
     } catch (error) { next(error); }
 };
 
