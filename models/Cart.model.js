@@ -19,21 +19,30 @@ const cartSchema = new mongoose.Schema({
 }, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
 
 // Mongoose Virtuals للحسابات اللحظية
+// حساب مجموع السعر قبل الخصم
 cartSchema.virtual('subtotal').get(function() {
     return this.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 });
 
-// Virtual لحساب الـ total بعد الخصم
-cartSchema.virtual('total').get(function() {
-    let subtotal = this.subtotal;
-    if (!this.coupon) return subtotal;
-    
-    let discount = 0;
+// حساب إجمالي عدد المنتجات في الكارت
+cartSchema.virtual('itemCount').get(function() {
+    return this.items.reduce((total, item) => total + item.quantity, 0);
+});
+
+// حساب قيمة الخصم
+cartSchema.virtual('discountAmount').get(function() {
+    if (!this.coupon) return 0;
+    const subtotal = this.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     if (this.coupon.discountType === 'percentage') {
-        discount = subtotal * (this.coupon.discountValue / 100);
-    } else {
-        discount = this.coupon.discountValue;
+        return subtotal * (this.coupon.discountValue / 100);
     }
+    return this.coupon.discountValue;
+});
+
+// حساب الـ total بعد الخصم
+cartSchema.virtual('total').get(function() {
+    const subtotal = this.subtotal;
+    const discount = this.discountAmount;
     return Math.max(0, subtotal - discount);
 });
 

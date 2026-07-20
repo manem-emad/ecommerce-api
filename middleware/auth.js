@@ -9,7 +9,6 @@ const protect = async (req, res, next) => {
             token = req.headers.authorization.split(' ')[1];
         }
 
-        // 2. استخدم next(new AppError(...)) بدل الـ res.status
         if (!token) return next(new AppError('You are not logged in.', 401));
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -24,4 +23,16 @@ const protect = async (req, res, next) => {
     }
 };
 
-module.exports = { protect };
+// ضيف الدالة دي هنا
+const restrictTo = (...roles) => {
+    return (req, res, next) => {
+        // roles هي المصفوفة اللي بتبعتها في الراوت (مثلا ['admin'])
+        if (!roles.includes(req.user.role)) {
+            return next(new AppError('You do not have permission to perform this action', 403));
+        }
+        next();
+    };
+};
+
+// عدل الإكسبورت عشان يخرج الاثنين
+module.exports = { protect, restrictTo };

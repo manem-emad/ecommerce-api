@@ -17,6 +17,7 @@ const userRoutes = require('./routes/user.routes');
 const productRoutes = require('./routes/product.routes');
 const cartRoutes = require('./routes/cart.routes'); 
 const wishlistRoutes = require('./routes/wishlist.routes');
+const orderRoutes = require('./routes/order.routes');
 
 // 5. ربط المسارات بالتطبيق
 // لاحظ أننا نضعهم هنا بعد تعريف الميدل وير وقبل معالجة الأخطاء
@@ -25,6 +26,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/carts', cartRoutes); 
 app.use('/api/v1/wishlists', wishlistRoutes);
+app.use('/api/orders', orderRoutes);
 
 // 6. المسار الرئيسي للتأكد من عمل السيرفر
 app.get('/', (req, res) => {
