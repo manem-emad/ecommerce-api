@@ -1,6 +1,7 @@
 const Order = require('../models/Order.model');
 const Cart = require('../models/Cart.model');
 const Product = require('../models/Product.model');
+const User = require('../models/User.model');
 const AppError = require('../utils/appError');
 const mongoose = require('mongoose');
 
@@ -46,7 +47,7 @@ exports.createCashOrder = async (req, res, next) => {
     }
 };
 
-// 2. جلب طلبات اليوزر الحالي
+// 2. جلب طلبات اليوزر الحالي (User)
 exports.getMyOrders = async (req, res, next) => {
     try {
         const orders = await Order.find({ user: req.user._id });
@@ -101,4 +102,73 @@ exports.updateOrderStatus = async (req, res, next) => {
         if (!order) return next(new AppError('Order not found', 404));
         res.status(200).json({ success: true, data: order });
     } catch (error) { next(error); }
+};
+
+// 6. لوحة تحكم الأدمن والإحصائيات (Admin Dashboard)
+exports.getAdminDashboard = async (req, res, next) => {
+    try {
+        const [
+            totalCustomers,
+            totalAdmins,
+            totalProducts,
+            orderStats,
+            revenueStats,
+            topProducts,
+            dailyRevenue,
+            recentOrders
+        ] = await Promise.all([
+            User.countDocuments({ role: 'customer' }),
+            User.countDocuments({ role: 'admin' }),
+            Product.countDocuments(),
+            Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+            Order.aggregate([{ $group: { _id: null, totalRevenue: { $sum: "$totalPrice" } } }]),
+            Product.find().sort({ sold: -1 }).limit(5).select('name image sold price'),
+            Order.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: new Date(new Date().setDate(new Date().getDate() - 7)) }
+                    }
+                },
+                {
+                    $group: {
+                        _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                        revenue: { $sum: "$totalPrice" },
+                        orders: { $sum: 1 }
+                    }
+                },
+                { $sort: { _id: 1 } }
+            ]),
+            Order.find().sort({ createdAt: -1 }).limit(5).populate('user', 'name email')
+        ]);
+
+        const orderStatusMap = { pending: 0, confirmed: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0, returned: 0 };
+        orderStats.forEach(stat => {
+            if (orderStatusMap.hasOwnProperty(stat._id)) {
+                orderStatusMap[stat._id] = stat.count;
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                totalCustomers,
+                totalAdmins,
+                totalProducts,
+                orders: {
+                    total: Object.values(orderStatusMap).reduce((a, b) => a + b, 0),
+                    ...orderStatusMap
+                },
+                revenue: {
+                    totalRevenue: revenueStats[0]?.totalRevenue || 0,
+                    currentMonthRevenue: 0,
+                    lastMonthRevenue: 0
+                },
+                topProducts,
+                dailyRevenue,
+                recentOrders
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
 };

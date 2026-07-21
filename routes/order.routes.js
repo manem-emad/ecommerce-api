@@ -15,5 +15,6 @@ router.patch('/:id/cancel', orderController.cancelMyOrder); // إلغاء الط
 router.use(restrictTo('admin'));
 router.get('/admin', orderController.getAllOrders); // جلب كل الطلبات
 router.patch('/admin/:id/status', orderController.updateOrderStatus); // تحديث حالة الطلب
+router.get('/admin/dashboard', orderController.getAdminDashboard);
 
 module.exports = router;
