@@ -15,7 +15,6 @@ exports.createCashOrder = async (req, res, next) => {
 
         if (!cart || cart.items.length === 0) return next(new AppError('Cart is empty', 400));
 
-        // حساب التكاليف اعتماداً على الـ Virtuals في المودل
         const order = await Order.create([{
             user: req.user._id,
             items: cart.items,
@@ -29,7 +28,6 @@ exports.createCashOrder = async (req, res, next) => {
             paymentMethod: 'cash'
         }], { session });
 
-        // تحديث المخزون (Stock & Sold)
         for (const item of cart.items) {
             await Product.findByIdAndUpdate(item.product, { 
                 $inc: { stock: -item.quantity, sold: item.quantity } 
@@ -64,11 +62,16 @@ exports.cancelMyOrder = async (req, res, next) => {
         if (!order || order.user.toString() !== req.user._id.toString()) return next(new AppError('Order not found', 404));
         if (!['pending', 'confirmed'].includes(order.status)) return next(new AppError('Cannot cancel this order', 400));
 
-        // استرجاع المخزون
-        for (const item of order.items) {
-            await Product.findByIdAndUpdate(item.product, { 
-                $inc: { stock: item.quantity, sold: -item.quantity } 
-            }, { session });
+     
+        const shouldRestoreStock = order.paymentMethod === 'cash' || order.paymentStatus === 'paid';
+        if (shouldRestoreStock) {
+            await Promise.all(
+                order.items.map(item => 
+                    Product.findByIdAndUpdate(item.product, { 
+                        $inc: { stock: item.quantity, sold: -item.quantity } 
+                    }, { session })
+                )
+            );
         }
 
         order.status = 'cancelled';
@@ -95,24 +98,46 @@ exports.getAllOrders = async (req, res, next) => {
 // 5. تحديث حالة الطلب (Admin)
 exports.updateOrderStatus = async (req, res, next) => {
     try {
-        const order = await Order.findByIdAndUpdate(req.params.id, { 
-            status: req.body.status, 
-            ...(req.body.status === 'delivered' ? { deliveredAt: Date.now() } : {}) 
-        }, { new: true });
+        const { status, adminNote } = req.body;
+        const order = await Order.findById(req.params.id);
         if (!order) return next(new AppError('Order not found', 404));
+
+        if (order.status === 'cancelled') return next(new AppError('Order is already cancelled', 400));
+        if (order.status === 'delivered') return next(new AppError('Order is already delivered', 400));
+
+        order.status = status;
+        if (status === 'delivered') {
+            order.deliveredAt = Date.now();
+            if (order.paymentMethod === 'cash') {
+                order.paymentStatus = 'paid';
+                order.paidAt = Date.now();
+            }
+        }
+        if (adminNote) {
+            order.adminNote = adminNote;
+        }
+
+        await order.save();
         res.status(200).json({ success: true, data: order });
     } catch (error) { next(error); }
 };
 
-// 6. لوحة تحكم الأدمن والإحصائيات (Admin Dashboard)
+// 6. لوحة تحكم الأدمن والإحصائيات (Admin Dashboard) - 
 exports.getAdminDashboard = async (req, res, next) => {
     try {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const last7Days = new Date();
+        last7Days.setDate(last7Days.getDate() - 6);
+
         const [
             totalCustomers,
             totalAdmins,
             totalProducts,
             orderStats,
-            revenueStats,
+            totalRevenueResult,
+            lastMonthRevenueResult,
             topProducts,
             dailyRevenue,
             recentOrders
@@ -121,12 +146,38 @@ exports.getAdminDashboard = async (req, res, next) => {
             User.countDocuments({ role: 'admin' }),
             Product.countDocuments(),
             Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
-            Order.aggregate([{ $group: { _id: null, totalRevenue: { $sum: "$totalPrice" } } }]),
+          
+            Order.aggregate([
+                { $match: { paymentStatus: "paid" } },
+                { $group: { _id: null, totalRevenue: { $sum: "$totalPrice" } } }
+            ]),
+            // إيرادات الشهر الحالي والشهر الماضي
+            Order.aggregate([
+                { 
+                    $match: { 
+                        paymentStatus: "paid",
+                        createdAt: { $gte: startOfLastMonth }
+                    } 
+                },
+                {
+                    $group: {
+                        _id: {
+                            $cond: [
+                                { $gte: ["$createdAt", startOfMonth] },
+                                "currentMonth",
+                                "lastMonth"
+                            ]
+                        },
+                        revenue: { $sum: "$totalPrice" }
+                    }
+                }
+            ]),
             Product.find().sort({ sold: -1 }).limit(5).select('name image sold price'),
             Order.aggregate([
                 {
                     $match: {
-                        createdAt: { $gte: new Date(new Date().setDate(new Date().getDate() - 7)) }
+                        paymentStatus: "paid",
+                        createdAt: { $gte: last7Days }
                     }
                 },
                 {
@@ -148,6 +199,13 @@ exports.getAdminDashboard = async (req, res, next) => {
             }
         });
 
+        let currentMonthRevenue = 0;
+        let lastMonthRevenue = 0;
+        lastMonthRevenueResult.forEach(item => {
+            if (item._id === "currentMonth") currentMonthRevenue = item.revenue;
+            if (item._id === "lastMonth") lastMonthRevenue = item.revenue;
+        });
+
         res.status(200).json({
             success: true,
             data: {
@@ -159,9 +217,9 @@ exports.getAdminDashboard = async (req, res, next) => {
                     ...orderStatusMap
                 },
                 revenue: {
-                    totalRevenue: revenueStats[0]?.totalRevenue || 0,
-                    currentMonthRevenue: 0,
-                    lastMonthRevenue: 0
+                    totalRevenue: totalRevenueResult[0]?.totalRevenue || 0,
+                    currentMonthRevenue,
+                    lastMonthRevenue
                 },
                 topProducts,
                 dailyRevenue,
